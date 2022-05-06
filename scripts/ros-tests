@@ -1,0 +1,138 @@
+#!/bin/bash
+
+############################################
+## Helpers
+############################################
+
+# Color definitions
+RED='\033[0;31m'
+YEL='\033[0;33m'
+GRN='\033[0;32m'
+BLU='\033[0;34m'
+CYA='\033[0;36m'
+NC_='\033[0m' # No Color
+REDBG='\033[0;41m'
+
+# Pass/Fail for the final report table
+FAIL="${REDBG}FAIL${NC_}"
+PASS="${GRN}PASS${NC_}"
+UNKNOWN="${YEL}Unknown${NC_}"
+
+# Helper functions for logging
+log_success() {
+  echo -e "${GRN}[ OK ] $@${NC_}"
+}
+log_important() {
+  echo -e "${REDBG}[NOTE] $@${NC_}"
+}
+log_error() {
+  echo -e "${RED}[ERR ] $@${NC_}"
+}
+log_warn() {
+  echo -e "${YEL}[WARN] $@${NC_}"
+}
+log_info() {
+  echo -e "${NC_}[INFO] $@${NC_}"
+}
+log_debug() {
+  echo -e "${CYA}[DBUG] $@${NC_}"
+}
+
+check_topic() {
+  # use rostopic hz to ensure a topic is publishing at all
+  # if there's no data, the "average rate" field is never
+  # displayed.
+  # Prints $PASS or $FAIL, so capture the output!
+  __topic=$1
+  hz=$(timeout 3 rostopic hz $__topic 2>/dev/null)
+  hz=$(echo "$hz" | grep "average rate:")
+  if [ -z "$hz" ];
+  then
+    echo -e -n "${FAIL}"
+  else
+    echo -e -n "${PASS}"
+  fi
+}
+
+############################################
+## Ensure required envars are present
+############################################
+log_info "Checking required environment variables..."
+REQD_ENVAR_RESULT=${PASS}
+if [ -z "${CLEARPATH_API_VERSION}" ];
+then
+  log_error "CLEARPATH_API_VERSION is not defined"
+  REQD_ENVAR_RESULT=${FAIL}
+fi
+if [ -z "${HOSTNAME_ROS_SANITIZED}" ];
+then
+  log_error "HOSTNAME_ROS_SANITIZED is not defined"
+  REQD_ENVAR_RESULT=${FAIL}
+fi
+if [ -z "${ROS_ROBOT_MODEL}" ];
+then
+  log_error "ROS_ROBOT_MODEL is not defined"
+  REQD_ENVAR_RESULT=${FAIL}
+fi
+
+############################################
+## Make sure indoornav is already running
+############################################
+log_info "Checking if IndoorNav is running..."
+INDOOR_NAV_RUNNING_RESULT=${FAIL}
+nodes=$(rosnode list | grep "/mapper/rocksteady/rosapi")
+if ! [ -z "$nodes" ];
+then
+  INDOOR_NAV_RUNNING_RESULT=${PASS}
+fi
+
+
+############################################
+## Check that needed ROS topics are
+## published by the robot
+## TODO: alternate IMU topics?
+############################################
+log_info "Checking robot sensor topics.  This may take a few seconds..."
+FRONT_SCAN_RESULT=$(check_topic "/front/scan")
+REAR_SCAN_RESULT=$(check_topic "/rear/scan")
+IMU_RESULT=$(check_topic "/imu/upgraded/data")
+if [ -z "$INDOORNAV_IMU_GX5" ] || [ "$INDOORNAV_IMU_GX5" = "0" ];
+then
+  IMU_TOPIC="/um7/imu/data"
+else
+  IMU_TOPIC="/gx5/imu/data"
+fi
+IMU_RESULT=$(check_topic "$IMU_TOPIC")
+AUX_CMD_VEL_RESULT=${FAIL}
+if ! [ -z "$(rostopic info /$HOSTNAME_ROS_SANITIZED/cmd_vel)" ];
+then
+  AUX_CMD_VEL_RESULT=${PASS}
+fi
+
+############################################
+## Check that the ros1_bridge is running
+############################################
+log_info "Checking ROS1->2 bridge"
+BRIDGE_RESULT=${UNKNOWN}
+if [ -z "$(rosnode list | grep ${ROS_ROBOT_MODEL}_bridge)" ];
+then
+  BRIDGE_RESULT=${FAIL}
+else
+  BRIDGE_RESULT=${PASS}
+fi
+
+############################################
+## Results
+############################################
+echo
+echo "ROS Test Summary"
+echo -e "Test                     | Pass/Fail"
+echo -e "-------------------------+-------------"
+echo -e "Req'd Envars             | ${REQD_ENVAR_RESULT}"
+echo -e "IndoorNav Running        | ${INDOOR_NAV_RUNNING_RESULT}"
+echo -e "Robot sensor topics...   |"
+echo -e "  /front/scan            | ${FRONT_SCAN_RESULT}"
+echo -e "  /rear/scan             | ${REAR_SCAN_RESULT}"
+echo -e    "  $IMU_TOPIC          | ${IMU_RESULT}"     # Yes, this really is aligned correctly!
+echo -e "ROS1->2 bridge running   | ${BRIDGE_RESULT}"
+echo -e "ROS2 cmd_vel input       | ${AUX_CMD_VEL_RESULT}"

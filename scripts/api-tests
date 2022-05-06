@@ -1,0 +1,166 @@
+#!/bin/bash
+# Tests run inside the ROS2 environment to make sure the ROS1->2 bridge is working
+
+############################################
+## Helpers
+############################################
+
+# Color definitions
+RED='\033[0;31m'
+YEL='\033[0;33m'
+GRN='\033[0;32m'
+BLU='\033[0;34m'
+CYA='\033[0;36m'
+NC_='\033[0m' # No Color
+REDBG='\033[0;41m'
+
+# Pass/Fail for the final report table
+FAIL="${REDBG}FAIL${NC_}"
+PASS="${GRN}PASS${NC_}"
+UNKNOWN="${YEL}Unknown${NC_}"
+
+# Helper functions for logging
+log_success() {
+  echo -e "${GRN}[ OK ] $@${NC_}"
+}
+log_important() {
+  echo -e "${REDBG}[NOTE] $@${NC_}"
+}
+log_error() {
+  echo -e "${RED}[ERR ] $@${NC_}"
+}
+log_warn() {
+  echo -e "${YEL}[WARN] $@${NC_}"
+}
+log_info() {
+  echo -e "${NC_}[INFO] $@${NC_}"
+}
+log_debug() {
+  echo -e "${CYA}[DBUG] $@${NC_}"
+}
+
+if [ -z "$ROS2_DISTRO" ];
+then
+  ROS2_DISTRO="foxy"
+fi
+log_debug "Using ROS2 Distro $ROS2_DISTRO"
+
+FLEET_DOMAIN=100
+AUTONOMY_DOMAIN=95
+ROBOT_DOMAIN=121
+
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export CYCLONEDDS_URI=file://$(catkin_find cpr_indoornav_base config/cyclone_dds.xml --first-only)
+
+source /opt/ros/${ROS2_DISTRO}/setup.bash
+ROS2_API_VERSION=$(ls -r /opt/clearpath | grep -E "^ros2-api-[0-9]+\.[0-9]+\.[0-9]+$" | head -1 | cut -d- -f3)
+source /opt/clearpath/ros2-api-${ROS2_API_VERSION}/local_setup.bash
+log_debug "Using Clearpath ROS2 API v${ROS2_API_VERSION}"
+
+topic_list_sanitized() {
+  ros2 topic list | sed '/^\/parameter_events/d' | sed '/^\/rosout/d'
+}
+
+check_topic() {
+  # Prints $PASS or $FAIL, so capture the output!
+  __topic=$1
+  __timeout=$2
+  if [ -z $__timeout ];
+  then
+    __timeout=3
+  fi
+  __type="$(ros2 topic info $__topic | grep Type | awk '{print $2}')"
+  # force the -u flag to work around buffered output
+  __data="$(timeout $__timeout python3 -u `which ros2` topic echo $__topic $__type)"
+  if [ -z "$__data" ];
+  then
+    echo -e -n "${FAIL}"
+  else
+    echo -e -n "${PASS}"
+  fi
+}
+
+############################################
+## Ensure required envars are present
+############################################
+log_info "Checking required environment variables..."
+REQD_ENVAR_RESULT=${PASS}
+if [ -z "${CLEARPATH_API_VERSION}" ];
+then
+  log_error "CLEARPATH_API_VERSION is not defined"
+  REQD_ENVAR_RESULT=${FAIL}
+fi
+if [ -z "${HOSTNAME_ROS_SANITIZED}" ];
+then
+  log_error "HOSTNAME_ROS_SANITIZED is not defined"
+  REQD_ENVAR_RESULT=${FAIL}
+fi
+
+############################################
+## Fleet API
+############################################
+export ROS_DOMAIN_ID=$FLEET_DOMAIN
+log_info "Checking Fleet API on domain $ROS_DOMAIN_ID..."
+FLEET_TOPICS_RESULT=${FAIL}
+if ! [ -z "$(topic_list_sanitized)" ];
+then
+  FLEET_TOPICS_RESULT=${PASS}
+fi
+MOTION_STATE_RESULT=$(check_topic /cpr_fleet_api/$CLEARPATH_API_VERSION/$HOSTNAME_ROS_SANITIZED/navigation/motion_state 5)
+
+
+############################################
+## Autonomy API
+############################################
+export ROS_DOMAIN_ID=$AUTONOMY_DOMAIN
+log_info "Checking Autonomy API on domain $ROS_DOMAIN_ID..."
+
+AUTONOMY_TOPICS_RESULT=${FAIL}
+if ! [ -z "$(topic_list_sanitized)" ];
+then
+  AUTONOMY_TOPICS_RESULT=${PASS}
+fi
+POINT_STATE_RESULT=$(check_topic /cpr_autonomy_api/$CLEARPATH_API_VERSION/$HOSTNAME_ROS_SANITIZED/slam/scan_points)
+
+
+############################################
+## ROS1->2 Bridge
+############################################
+export ROS_DOMAIN_ID=$ROBOT_DOMAIN
+log_info "Checking robot platform on domain $ROS_DOMAIN_ID..."
+ROBOT_TOPICS_RESULT=${FAIL}
+if ! [ -z "$(topic_list_sanitized)" ];
+then
+  ROBOT_TOPICS_RESULT=${PASS}
+fi
+FRONT_SCAN_RESULT=$(check_topic /$HOSTNAME_ROS_SANITIZED/front/scan)
+REAR_SCAN_RESULT=$(check_topic /$HOSTNAME_ROS_SANITIZED/rear/scan)
+IMU_RESULT=$(check_topic /$HOSTNAME_ROS_SANITIZED/gx5/imu/data)
+WIRELESS_RESULT=$(check_topic /$HOSTNAME_ROS_SANITIZED/wireless/connected 5)
+BMS_RESULT=$(check_topic /$HOSTNAME_ROS_SANITIZED/battery_status 5)
+CMD_VEL_RESULT=${FAIL}
+if ! [ -z $(ros2 topic list | grep "$HOSTNAME_ROS_SANITIZED/cmd_vel") ];
+then
+  CMD_VEL_RESULT=${PASS}
+fi
+
+
+############################################
+## Results
+############################################
+echo
+echo "ROS2 API Test Summary"
+echo -e "Test                     | Pass/Fail"
+echo -e "-------------------------+-------------"
+echo -e "Req'd Envars             | ${REQD_ENVAR_RESULT}"
+echo -e "Fleet API Topics Exist   | ${FLEET_TOPICS_RESULT}"
+echo -e "  .../motion_state       | ${MOTION_STATE_RESULT}"
+echo -e "Auton. API Topics Exist  | ${AUTONOMY_TOPICS_RESULT}"
+echo -e "  .../slam/scan_points   | ${POINT_STATE_RESULT}"
+echo -e "Robot 1->2 Bridge        | ${ROBOT_TOPICS_RESULT}"
+echo -e "Robot 1->2 Topics:       |"
+echo -e "  .../front/scan         | ${FRONT_SCAN_RESULT}"
+echo -e "  .../rear/scan          | ${REAR_SCAN_RESULT}"
+echo -e "  .../wireless/connected | ${WIRELESS_RESULT}"
+echo -e "  .../battery_status     | ${BMS_RESULT}"
+echo -e "  .../cmd_vel            | ${CMD_VEL_RESULT}"
