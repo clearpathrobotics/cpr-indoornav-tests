@@ -47,7 +47,7 @@ log_debug "Using ROS2 Distro $ROS2_DISTRO"
 
 FLEET_DOMAIN=100
 AUTONOMY_DOMAIN=95
-ROBOT_DOMAIN=121
+ROBOT_DOMAIN=91
 
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI=file://$(catkin_find cpr_indoornav_base config/cyclone_dds.xml --first-only)
