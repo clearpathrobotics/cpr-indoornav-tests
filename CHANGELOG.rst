@@ -2,6 +2,11 @@
 Changelog for package cpr_indoornav_tests
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Change the ROS1->2 bridge's domain to 91 instead of 121
+* Contributors: Chris Iverach-Brereton
+
 0.3.0 (2022-05-06)
 ------------------
 * Initial public release
