@@ -2,6 +2,11 @@
 Changelog for package cpr_indoornav_tests
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Add tests for EKF since it must be enabled for IndoorNav to operate properly
+* Contributors: Chris Iverach-Brereton
+
 0.3.1 (2022-06-03)
 ------------------
 * Change the ROS1->2 bridge's domain to 91 instead of 121
