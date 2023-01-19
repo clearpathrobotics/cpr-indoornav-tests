@@ -76,6 +76,33 @@ then
 fi
 
 ############################################
+## Ensure EKF is enabled
+## If the envar is not defined then it
+## defaults to true
+############################################
+log_info "Checking that EKF is enabled..."
+EKF_ENABLED_RESULT=${PASS}
+if [ "${ENABLE_EKF}" == "0" ] ||
+   [ "${ENABLE_EKF}" == "false" ] ||
+   [ "${ENABLE_EKF}" == "False" ];
+then
+  log_error "ENABLE_EKF is set to false; EKF will not run"
+  EKF_ENABLED_RESULT=${FAIL}
+fi
+
+############################################
+## Ensure EKF node is running
+############################################
+log_info "Checking that EKF is running..."
+EKF_RUNNING_RESULT=${PASS}
+nodes=$(rosnode list | grep "/ekf_localization")
+if [ -z "${nodes}" ];
+then
+  log_warn "/ekf_localization node not found. Does your node have a different name?"
+  EKF_RUNNING_RESULT=${FAIL}
+fi
+
+############################################
 ## Make sure indoornav is already running
 ############################################
 log_info "Checking if IndoorNav is running..."
@@ -129,6 +156,8 @@ echo "ROS Test Summary"
 echo -e "Test                     | Pass/Fail"
 echo -e "-------------------------+-------------"
 echo -e "Req'd Envars             | ${REQD_ENVAR_RESULT}"
+echo -e "EKF is enabled           | ${EKF_ENABLED_RESULT}"
+echo -e "EKF is running           | ${EKF_RUNNING_RESULT}"
 echo -e "IndoorNav Running        | ${INDOOR_NAV_RUNNING_RESULT}"
 echo -e "Robot sensor topics...   |"
 echo -e "  /front/scan            | ${FRONT_SCAN_RESULT}"
