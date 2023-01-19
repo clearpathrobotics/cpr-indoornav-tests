@@ -2,8 +2,8 @@
 Changelog for package cpr_indoornav_tests
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.3.2 (2023-01-19)
+------------------
 * Add tests for EKF since it must be enabled for IndoorNav to operate properly
 * Contributors: Chris Iverach-Brereton
 
